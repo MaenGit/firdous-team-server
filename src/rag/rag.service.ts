@@ -33,7 +33,7 @@ export class RagService implements OnModuleInit {
       // نمرر الـ apiVersion هنا داخل الـ requestOptions لتخطي الـ v1beta
       const model = this.ai.getGenerativeModel(
         { model: 'text-embedding-001' },
-        { apiVersion: 'v1' } // تمرير الإعدادات هنا مدعوم ومضمون 100%
+        { apiVersion: 'v1beta' } // تمرير الإعدادات هنا مدعوم ومضمون 100%
       );
       
       const result = await model.embedContent(text);
