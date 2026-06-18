@@ -1,0 +1,36 @@
+datasource db {
+  provider   = "postgresql"
+  extensions = [pgvector(map: "vector")] // تفعيل امتداد الـ pgvector في Neon
+}
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"] // تفعيل ميزة الامتدادات في بريسما
+}
+
+// جدول لتخزين الأخبار والمعلومات المغذاة للنظام (Knowledge Base)
+model Knowledge {
+  id        String   @id @default(uuid())
+  content   String   // نص الخبر أو المعلومة
+  embedding Unsupported("vector(768)")? // تخزين الـ Vector (حجم 768 متوافق مع Gemini Embeddings)
+  createdAt DateTime @default(now())      // تاريخ ووقت إضافة الخبر (مهم جداً للفلترة الزمنية)
+  updatedAt DateTime @updatedAt
+}
+
+// جدول لإدارة تذاكر استفسارات المستخدمين والردود اليدوية
+model Ticket {
+  id           String       @id @default(uuid())
+  chatId       String       // معرف المستخدم على تليغرام
+  username     String?      // اسم المستخدم إن وجد
+  question     String       // سؤال المستخدم
+  status       TicketStatus @default(PENDING_BOT) // حالة الطلب
+  adminMsgId   String?      // معرف الرسالة في جروب الإدارة للرد اليدوي
+  createdAt    DateTime     @default(now())
+}
+
+enum TicketStatus {
+  PENDING_BOT      // تحت المعالجة الآلية
+  ANSWERED_BY_BOT  // تم الرد بواسطة البوت
+  PENDING_MANUAL   // ينتظر رد المسؤولين
+  ANSWERED_MANUAL  // تم الرد عليه يدوياً
+}
