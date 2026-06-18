@@ -19,8 +19,11 @@ export class RagService implements OnModuleInit {
       throw new Error('GOOGLE_AI_STUDIO_KEY is missing from .env file');
     }
 
-    // ✅ NEW INITIALIZATION: Instantiate the modern client instance
-    this.ai = new GoogleGenAI({ apiKey }); 
+    // 🔥 التعديل الجوهري: إجبار الـ SDK الموحد على استخدام مسار v1 المستقر
+    this.ai = new GoogleGenAI({ 
+      apiKey: apiKey,
+      httpOptions: { apiVersion: 'v1' } 
+    });
   }
 
   async onModuleInit() {

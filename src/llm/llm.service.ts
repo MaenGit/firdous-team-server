@@ -13,7 +13,10 @@ export class LlmService {
     const geminiKey = this.configService.get<string>('GOOGLE_AI_STUDIO_KEY');
     if (geminiKey) {
       // 🔥 التعديل الثالث: الطريقة الجديدة لتعريف الكلاينت
-      this.ai = new GoogleGenAI({ apiKey: geminiKey });
+      this.ai = new GoogleGenAI({ 
+  apiKey: geminiKey,
+  httpOptions: { apiVersion: 'v1' }
+});
     }
   }
 
