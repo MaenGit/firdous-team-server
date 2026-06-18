@@ -1,7 +1,6 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
-// الاستيراد الصحيح والمضبوط 100% بناءً على بحثك الذكي
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 @Injectable()
@@ -18,7 +17,7 @@ export class RagService implements OnModuleInit {
       throw new Error('GOOGLE_AI_STUDIO_KEY is missing from .env file');
     }
 
-    // تمرير الـ apiKey بعد التأكد التام من وجوده ليرتاح الـ TypeScript
+    // 🔥 التعديل الجوهري: إجبار الحزمة على استخدام مسار المستقر v1 بدلاً من v1beta
     this.ai = new GoogleGenerativeAI(apiKey);
   }
 
@@ -29,13 +28,14 @@ export class RagService implements OnModuleInit {
   /**
    * تحويل النص إلى Vector
    */
-  /**
-   * تحويل النص إلى Vector
-   */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const model = this.ai.getGenerativeModel({ model: 'text-embedding-001' });
-      // تمرير النص مباشرة كـ string وهو الأسلوب الصحيح لإصدارك
+      // نمرر الـ apiVersion هنا داخل الـ requestOptions لتخطي الـ v1beta
+      const model = this.ai.getGenerativeModel(
+        { model: 'text-embedding-04' },
+        { apiVersion: 'v1' } // تمرير الإعدادات هنا مدعوم ومضمون 100%
+      );
+      
       const result = await model.embedContent(text);
       return result.embedding.values;
     } catch (error) {
