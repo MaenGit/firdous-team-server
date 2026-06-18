@@ -1,11 +1,13 @@
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// ✅ NEW IMPORT: Import the modern client class
+import { GoogleGenAI } from '@google/genai'; 
 
 @Injectable()
 export class RagService implements OnModuleInit {
-  private ai: GoogleGenerativeAI;
+  // ✅ NEW TYPE: Updated to use the unified GoogleGenAI class
+  private ai: GoogleGenAI; 
 
   constructor(
     private configService: ConfigService,
@@ -17,8 +19,8 @@ export class RagService implements OnModuleInit {
       throw new Error('GOOGLE_AI_STUDIO_KEY is missing from .env file');
     }
 
-    // 🔥 التعديل الجوهري: إجبار الحزمة على استخدام مسار المستقر v1 بدلاً من v1beta
-    this.ai = new GoogleGenerativeAI(apiKey);
+    // ✅ NEW INITIALIZATION: Instantiate the modern client instance
+    this.ai = new GoogleGenAI({ apiKey }); 
   }
 
   async onModuleInit() {
@@ -26,18 +28,35 @@ export class RagService implements OnModuleInit {
   }
 
   /**
-   * تحويل النص إلى Vector
+   * Generates embedding using the unified @google/genai SDK
+   */
+  /**
+   * Generates embedding using the unified @google/genai SDK
+   */
+  /**
+   * Generates embedding using the unified @google/genai SDK
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      // نمرر الـ apiVersion هنا داخل الـ requestOptions لتخطي الـ v1beta
-      const model = this.ai.getGenerativeModel(
-        { model: 'text-embedding-004' },
-        { apiVersion: 'v1' } // تمرير الإعدادات هنا مدعوم ومضمون 100%
-      );
+      const response = await this.ai.models.embedContent({
+        model: 'text-embedding-004', 
+        contents: text,
+      });
+
+      // تحويل الرد إلى any لتفادي اعتراضات الـ TypeScript والوصول للمصفوفة مباشرة
+      const res = response as any;
+
+      // الحالة الأولى: الرد يحتوي على مصفوفة embeddings (وهو التصميم الأساسي للـ SDK الموحد)
+      if (res.embeddings && res.embeddings.length > 0 && res.embeddings[0].values) {
+        return res.embeddings[0].values;
+      }
+
+      // الحالة الثانية: الرد يحتوي على كائن embedding مفرد
+      if (res.embedding && res.embedding.values) {
+        return res.embedding.values;
+      }
       
-      const result = await model.embedContent(text);
-      return result.embedding.values;
+      throw new Error('No embedding values found in the response layout');
     } catch (error) {
       console.error('Error generating embedding:', error);
       throw error;
@@ -45,7 +64,7 @@ export class RagService implements OnModuleInit {
   }
 
   /**
-   * حفظ خبر جديد في قاعدة البيانات مع الـ Vector الخاص به
+   * Save knowledge with fixed position placeholder parameters
    */
   async saveKnowledge(content: string) {
     const embedding = await this.generateEmbedding(content);
@@ -60,7 +79,7 @@ export class RagService implements OnModuleInit {
   }
 
   /**
-   * البحث الذكي المدمج بالتاريخ (Time-Aware Vector Search)
+   * Time-Aware Vector Search with corrected Prisma argument syntax
    */
   async searchKnowledge(question: string, similarityThreshold = 0.5): Promise<string[]> {
     const questionEmbedding = await this.generateEmbedding(question);
@@ -77,7 +96,7 @@ export class RagService implements OnModuleInit {
       similarityThreshold,
     );
 
-    if (results.length > 0) {
+    if (results && results.length > 0) {
       return results.map(r => r.content);
     }
 

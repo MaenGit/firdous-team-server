@@ -1,16 +1,19 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+// 🔥 التعديل الأول: استخدام المكتبة الموحدة والحديثة
+import { GoogleGenAI } from '@google/genai'; 
 import axios from 'axios';
 
 @Injectable()
 export class LlmService {
-  private gemini: GoogleGenerativeAI;
+  // 🔥 التعديل الثاني: تحديث نوع الكائن للـ SDK الجديد
+  private ai: GoogleGenAI;
 
   constructor(private configService: ConfigService) {
     const geminiKey = this.configService.get<string>('GOOGLE_AI_STUDIO_KEY');
     if (geminiKey) {
-      this.gemini = new GoogleGenerativeAI(geminiKey);
+      // 🔥 التعديل الثالث: الطريقة الجديدة لتعريف الكلاينت
+      this.ai = new GoogleGenAI({ apiKey: geminiKey });
     }
   }
 
@@ -18,7 +21,6 @@ export class LlmService {
    * توليد الإجابة الذكية مع ميزة التحويل التلقائي عند الفشل (Failover)
    */
   async generateResponse(question: string, contextDocs: string[]): Promise<string> {
-    // 1. بناء الـ Prompt الاحترافي وتزويده بالبيانات المسترجعة من قاعدة البيانات
     const contextText = contextDocs.length > 0 
       ? contextDocs.map((doc, i) => `[معلومة ${i + 1}]: ${doc}`).join('\n')
       : 'لا توجد معلومات مباشرة ومحدثة في قاعدة البيانات حالياً.';
@@ -38,13 +40,17 @@ ${contextText}
 3. إذا كانت المعلومات المتاحة لا تحتوي على إجابة واضحة أو كانت فارغة، أجب بدقة وتأدب بالتالي تماماً: "نعتذر منك، لا تتوفر معلومات فورية دقيقة حول هذا الموضوع حالياً. تم رفع استفسارك للإدارة وسيقوم أحد المشرفين بالرد عليك يدوياً فوراً."
 `;
 
-    // 2. المحاولة الأولى: استخدام Google Gemini 2.5 Flash الحديث
+    // 2. المحاولة الأولى: استخدام Google Gemini 2.5 Flash الحديث عبر الـ SDK الجديد
     try {
       console.log('🤖 جاري محاولة توليد الإجابة عبر Google Gemini 2.5 Flash...');
-      // تحديث اسم النموذج إلى الاصدار 2.5 الأحدث
-      const model = this.gemini.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const result = await model.generateContent(systemPrompt);
-      const responseText = result.response.text();
+      
+      // 🔥 التعديل الرابع: استخدام الـ Syntax الجديد المستقر مباشرة دون getGenerativeModel
+      const response = await this.ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: systemPrompt,
+      });
+
+      const responseText = response.text;
       
       if (responseText && responseText.trim().length > 0) {
         return responseText.trim();
@@ -53,7 +59,7 @@ ${contextText}
       console.error('⚠️ فشل الاتصال بـ Gemini 2.5، جاري التحويل تلقائياً إلى الخطة البديلة OpenRouter...', geminiError.message);
     }
 
-    // 3. الخطة البديلة (Failover): استخدام OpenRouter مع Gemma 3 المتاح مجاناً
+    // 3. الخطة البديلة (Failover): استخدام OpenRouter مع Gemma 3 المتاح مجاناً (يبقى كما هو)
     try {
       const openRouterKey = this.configService.get<string>('OPENROUTER_API_KEY');
       if (!openRouterKey) {
@@ -64,7 +70,6 @@ ${contextText}
       const response = await axios.post(
         'https://openrouter.ai/api/v1/chat/completions',
         {
-          // استخدام المعرف الرسمي لـ Gemma 3 المجاني على OpenRouter
           model: 'google/gemma-3-27b-it:free', 
           messages: [{ role: 'user', content: systemPrompt }],
         },
@@ -84,7 +89,6 @@ ${contextText}
       console.error('❌ فشلت الخطة البديلة (Gemma 3) أيضاً:', openRouterError.message);
     }
 
-    // في حال انقطاع كل السبل، نرجع رسالة الأمان لكي يقوم الأدمن بالرد يدوياً
     return 'نعتذر منك، لا تتوفر معلومات فورية دقيقة حول هذا الموضوع حالياً. تم رفع استفسارك للإدارة وسيقوم أحد المشرفين بالرد عليك يدوياً فوراً.';
   }
 }
