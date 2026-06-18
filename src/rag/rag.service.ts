@@ -34,7 +34,7 @@ export class RagService implements OnModuleInit {
    */
   async generateEmbedding(text: string): Promise<number[]> {
     try {
-      const model = this.ai.getGenerativeModel({ model: 'text-embedding-004' });
+      const model = this.ai.getGenerativeModel({ model: 'text-embedding-04' });
       // تمرير النص مباشرة كـ string وهو الأسلوب الصحيح لإصدارك
       const result = await model.embedContent(text);
       return result.embedding.values;
