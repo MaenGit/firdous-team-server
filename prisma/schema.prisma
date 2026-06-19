@@ -34,3 +34,12 @@ enum TicketStatus {
   PENDING_MANUAL   // ينتظر رد المسؤولين
   ANSWERED_MANUAL  // تم الرد عليه يدوياً
 }
+
+model QuickResponse {
+  id        String   @id @default(uuid())
+  keyword   String   @unique
+  reply     String
+  createdAt DateTime @default(now())
+
+  @@map("quick_responses") // لكي يحفظ في قاعدة البيانات باسم ثعباني، ويظهر في الكود باسم QuickResponse
+}

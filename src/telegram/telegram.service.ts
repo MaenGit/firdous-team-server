@@ -100,6 +100,32 @@ export class TelegramService implements OnModuleInit {
           return;
         }
 
+        if (text.startsWith('رد_ثابت:')) {
+          const cleanText = text.replace('رد_ثابت:', '').trim();
+          const parts = cleanText.split('->');
+
+          if (parts.length < 2) {
+            await ctx.reply('⚠️ الصيغة خاطئة يا صديقي! يرجى الكتابة بالشكل التالي:\n`رد_ثابت: السلام عليكم -> وعليكم السلام والرحمة`');
+            return;
+          }
+
+          const keyword = parts[0].trim();
+          const replyText = parts[1].trim();
+
+          try {
+            await this.prisma.quickResponse.upsert({
+              where: { keyword: keyword },
+              update: { reply: replyText },
+              create: { keyword: keyword, reply: replyText },
+            });
+            await ctx.reply(`✅ تم حفظ الرد الثابت بنجاح!\n\n🔑 **الكلمة:** ${keyword}\n💬 **الرد:** ${replyText}`);
+          } catch (error) {
+            console.error('Error saving quick response:', error);
+            await ctx.reply('❌ حدث خطأ أثناء حفظ الرد الثابت بقاعدة البيانات.');
+          }
+          return;
+        }
+
         // آلية الرد اليدوي (Reply)
         if (ctx.message.reply_to_message) {
           const replyToId = ctx.message.reply_to_message.message_id.toString();
@@ -149,6 +175,30 @@ export class TelegramService implements OnModuleInit {
       const question = ctx.message.text;
       const chatId = ctx.chat.id.toString();
       const username = ctx.from.username || ctx.from.first_name;
+
+      const quickMatch = await this.prisma.quickResponse.findFirst({
+        where: {
+          OR: [
+            { keyword: { equals: question } }, // تطابق تام
+            { keyword: { contains: question } } // الكلمة جزء من الجملة
+          ]
+        }
+      });
+
+      if (quickMatch) {
+        await ctx.reply(quickMatch.reply);
+        
+        // تسجيل التذكرة كـ "مستجاب تلقائياً" للحفظ في السجلات
+        await this.prisma.ticket.create({
+          data: {
+            chatId,
+            username,
+            question,
+            status: 'ANSWERED_BY_BOT', // أو الاسم المتوافق لديك في الـ Enum
+          },
+        });
+        return;
+      }
 
       // 1. إشارة للمستخدم ببدء المعالجة
       const waitingMsg = await ctx.reply('⏳ جاري البحث والتحقق من الاستفسار، لحظات من فضلك...');
