@@ -62,6 +62,7 @@ export class TelegramService implements OnModuleInit {
 
       // التأكد من أن الرسالة قادمة من جروب الإدارة المعتمد وليس من مكان آخر
       if (chatId === this.adminGroupChatId) {
+        console.log('Received message in admin group:', text);
         // إذا بدأت الرسالة بكلمة "تغذية" أو "خبر:" نقوم بحفظها في الـ RAG
         if (text.startsWith('تغذية:') || text.startsWith('خبر:')) {
           const cleanContent = text.replace(/^(تغذية:|خبر:)\s*/, '');
@@ -88,7 +89,7 @@ export class TelegramService implements OnModuleInit {
           if (ticket) {
             try {
               // إرسال رد الأدمن مباشرة للمستخدم الأصلي عبر البوت الرئيسي!
-              await this.mainBot.telegram.sendMessage(ticket.chatId, `✍️ **رد من إدارة فريق ضاحيتنا الإعلامي:**\n\n${text}`, { parse_mode: 'MarkdownV2' });
+              await this.mainBot.telegram.sendMessage(ticket.chatId, `✍️ **رد من إدارة فريق الفردوس الإعلامي:**\n\n${text}`, { parse_mode: 'MarkdownV2' });
               
               // تحديث حالة التذكرة إلى تم الرد يدوياً
               await this.prisma.ticket.update({
