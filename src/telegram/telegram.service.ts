@@ -37,8 +37,12 @@ export class TelegramService implements OnModuleInit {
     // إعداد الـ Webhooks عند إقلاع السيرفر وتوجيه التلغرام للروابط الخاصة بنا على Render
     if (this.serverUrl && !this.serverUrl.includes('localhost')) {
       try {
-        await this.mainBot.telegram.setWebhook(`${this.serverUrl}/telegram/main`);
-        await this.adminBot.telegram.setWebhook(`${this.serverUrl}/telegram/admin`);
+        const webhookOptions:any = {
+          allowed_updates: ['message', 'edited_message', 'callback_query', 'chat_member'],
+          drop_pending_updates: true // لتنظيف أي رسائل قديمة عالقة
+        };
+        await this.mainBot.telegram.setWebhook(`${this.serverUrl}/telegram/main`, webhookOptions);
+        await this.adminBot.telegram.setWebhook(`${this.serverUrl}/telegram/admin`, webhookOptions);
         console.log('🚀 Webhooks have been successfully configured!');
       } catch (error) {
         console.error('Error setting webhooks:', error);
