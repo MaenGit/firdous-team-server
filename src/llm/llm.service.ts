@@ -15,7 +15,6 @@ export class LlmService {
       // 🔥 التعديل الثالث: الطريقة الجديدة لتعريف الكلاينت
       this.ai = new GoogleGenAI({ 
   apiKey: geminiKey,
-  httpOptions: { apiVersion: 'v1' }
 });
     }
   }

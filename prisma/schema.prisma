@@ -12,7 +12,7 @@ generator client {
 model Knowledge {
   id        String   @id @default(uuid())
   content   String   // نص الخبر أو المعلومة
-  embedding Unsupported("vector(3072)")? // تخزين الـ Vector (حجم 768 متوافق مع Gemini Embeddings)
+  embedding Unsupported("vector(768)")? // تخزين الـ Vector (حجم 768 متوافق مع Gemini Embeddings)
   createdAt DateTime @default(now())      // تاريخ ووقت إضافة الخبر (مهم جداً للفلترة الزمنية)
   updatedAt DateTime @updatedAt
 }

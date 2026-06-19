@@ -42,9 +42,13 @@ export class RagService implements OnModuleInit {
   async generateEmbedding(text: string): Promise<number[]> {
     try {
       const response = await this.ai.models.embedContent({
-        model: 'text-embedding-005', 
+        model: 'gemini-embedding-2',
         contents: text,
-      });
+        // This forces the model to return exactly 768 dimensions
+        config: {
+            outputDimensionality: 768
+        }
+    });
 
       // تحويل الرد إلى any لتفادي اعتراضات الـ TypeScript والوصول للمصفوفة مباشرة
       const res = response as any;
