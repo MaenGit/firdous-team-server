@@ -165,7 +165,7 @@ export class TelegramService implements OnModuleInit {
     // ترحيب بالمستخدم عند الضغط على /start
     this.mainBot.start(async (ctx) => {
       await ctx.reply(
-        `أهلاً بك في بوت "فريق ضاحيتنا الإعلامي" لخدمة أهالي ضاحية الفردوس. 🌸\n\nاكتب استفسارك هنا (مثال: هل المياه مقطوعة اليوم؟) وسيقوم البوت الذكي بالإجابة عليك فوراً بناءً على أحدث البيانات المعتمدة لدينا.`,
+        `أهلاً بك في بوت "فريق الفردوس الإعلامي" لخدمة أهالي ضاحية الفردوس. 🌸\n\nاكتب استفسارك هنا (مثال: هل المياه مقطوعة اليوم؟) وسيقوم البوت الذكي بالإجابة عليك فوراً بناءً على أحدث البيانات المعتمدة لدينا.`,
       );
     });
 
@@ -221,22 +221,40 @@ export class TelegramService implements OnModuleInit {
         const contextDocs = await this.ragService.searchKnowledge(question);
 
         // 4. إذا لم يجد معلومات كافية في الـ RAG (المصفوفة فارغة) تحول للأدمن يدوياً في الجروب فوراً
-        if (!contextDocs || contextDocs.length === 0) {
-          await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.');
-          
-          // إرسال تنبيه لجروب الإدارة عبر بوت الإدارة لكي تقوموا بالرد عليه
+
+        // 🚨 طباعة النتيجة في الـ Logs لترى بعينك ماذا يرجع الـ RAG!
+        console.log('🔍 [RAG RESULT] المخرجات القادمة من الـ RAG هي:', JSON.stringify(contextDocs));
+
+        // فحص صارم وذكي: هل المخرجات فارغة، أو غير موجودة، أو تحتوي على نصوص فارغة؟
+        const isContextEmpty = 
+          !contextDocs || 
+          !Array.isArray(contextDocs) || 
+          contextDocs.length === 0 ||
+          contextDocs.every(doc => !doc || doc.trim() === "" || doc.includes("لا توجد معلومات"));
+
+        // 4. إذا تحققنا أن السياق فارغ أو غير مفيد -> نذهب فوراً للمجموعة (التحويل اليدوي)
+        if (isContextEmpty) {
+          console.log('🚨 [LOG] السياق فارغ! جاري تحويل السؤال يدوياً إلى جروب الإدارة فورا...');
+
+          // إرسال التنبيه لجروب الإدارة أولاً
           const adminAlert = await this.adminBot.telegram.sendMessage(
             this.adminGroupChatId,
-            `🚨 **إشعار استفسار جديد يحتاج رد يدوياً!**\n\n**المستفسر:** @${username}\n**الاستفسار:** ${question}\n\n👉 *قم بعمل Reply على هذه الرسالة للرد عليه مباشرة.*`,
-            { parse_mode: 'HTML' }
-          );
-
-          // تحديث حالة التذكرة لانتظار الرد اليدوي بربطها بالـ Message ID في جروب الإدارة
-          await this.prisma.ticket.update({
-            where: { id: ticket.id },
-            data: { status: 'PENDING_MANUAL', adminMsgId: adminAlert.message_id.toString() },
+            `🚨 استفسار جديد يحتاج رد يدوي:\n👤 المستخدم: @${username}\n💬 السؤال: ${question}\n\n👉 قم بعمل Reply للرد عليه.`
+          ).catch(err => {
+            console.error('❌ فشل الإرسال للمجموعة، تأكد من التوكن والـ ID والرتبة:', err.message);
+            return null;
           });
-          return;
+
+          if (adminAlert) {
+            await this.prisma.ticket.update({
+              where: { id: ticket.id },
+              data: { status: 'PENDING_MANUAL', adminMsgId: adminAlert.message_id.toString() },
+            });
+          }
+
+          await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.').catch(e => console.log('فشل تعديل رسالة المستخدم'));
+          
+          return; // إنهاء دالة المعالجة وعدم الذهاب للـ AI
         }
 
         // 5. إذا وُجدت معلومات في قاعدة البيانات: نمرر المصفوفة للـ LLM (Gemini) ليصيغ الرد
