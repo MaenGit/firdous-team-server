@@ -89,7 +89,7 @@ export class TelegramService implements OnModuleInit {
           if (ticket) {
             try {
               // إرسال رد الأدمن مباشرة للمستخدم الأصلي عبر البوت الرئيسي!
-              await this.mainBot.telegram.sendMessage(ticket.chatId, `✍️ **رد من إدارة فريق الفردوس الإعلامي:**\n\n${text}`, { parse_mode: 'MarkdownV2' });
+              await this.mainBot.telegram.sendMessage(ticket.chatId, `✍️ **رد من إدارة فريق الفردوس الإعلامي:**\n\n${text}`, { parse_mode: 'HTML' });
               
               // تحديث حالة التذكرة إلى تم الرد يدوياً
               await this.prisma.ticket.update({
@@ -152,7 +152,7 @@ export class TelegramService implements OnModuleInit {
         const adminAlert = await this.adminBot.telegram.sendMessage(
           this.adminGroupChatId,
           `🚨 **إشعار استفسار جديد يحتاج رد يدوياً!**\n\n**المستفسر:** @${username}\n**الاستفسار:** ${question}\n\n👉 *قم بعمل Reply على هذه الرسالة للرد عليه مباشرة.*`,
-          { parse_mode: 'MarkdownV2' }
+          { parse_mode: 'HTML' }
         );
 
         // حفظ معرف الرسالة لربط الـ Reply لاحقاً
