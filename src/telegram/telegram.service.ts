@@ -248,6 +248,29 @@ export class TelegramService implements OnModuleInit {
         // 5. إذا وُجدت معلومات في قاعدة البيانات: نمرر المصفوفة للـ LLM (Gemini) ليصيغ الرد
         const aiResponse = await this.llmService.generateResponse(question, contextDocs);
 
+        if (aiResponse == "I DONT KNOW"){
+          console.log('🚨 [LOG] لم يجتز أي خبر شرط القرب! جاري تحويل السؤال يدوياً إلى جروب الإدارة...');
+
+          const adminAlert = await this.adminBot.telegram.sendMessage(
+            this.adminGroupChatId,
+            `🚨 استفسار جديد يحتاج رد يدوي:\n👤 المستخدم: @${username}\n💬 السؤال: ${question}\n\n👉 قم بعمل Reply للرد عليه.`
+          ).catch(err => {
+            console.error('❌ فشل الإرسال للمجموعة:', err.message);
+            return null;
+          });
+
+          if (adminAlert) {
+            await this.prisma.ticket.update({
+              where: { id: ticket.id },
+              data: { status: 'PENDING_MANUAL', adminMsgId: adminAlert.message_id.toString() },
+            });
+          }
+
+          await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.').catch(e => {});
+          return;
+        
+        }
+
         // 6. تحديث رسالة الانتظار بالإجابة الذكية النهائية للمستخدم
         await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, aiResponse);
 
