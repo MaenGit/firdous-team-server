@@ -45,6 +45,12 @@ export class TelegramService implements OnModuleInit {
       }
     }
 
+//     if (this.serverUrl && this.serverUrl.includes('localhost')) {
+//   await this.mainBot.launch();
+//   await this.adminBot.launch();
+//   console.log('🤖 Bots are running in Polling mode locally!');
+// }
+
     // تشغيل مستمعي الرسائل (Handlers)
     this.registerAdminBotHandlers();
     this.registerMainBotHandlers();
@@ -54,16 +60,25 @@ export class TelegramService implements OnModuleInit {
    * 📥 1. بوت التغذية والإدارة (Admin Bot)
    */
   private registerAdminBotHandlers() {
-    // عندما يقوم أحد المشرفين بإرسال خبر في جروب الإدارة المغلق
     this.adminBot.on('text', async (ctx) => {
-      console.log("text comes to admin bot");
+      console.log("=== 📥 رسالة جديدة وصلت لبوت الإدارة ===");
+      
       const chatId = ctx.chat.id.toString();
       const text = ctx.message.text;
+      const chatType = ctx.chat.type; // لمعرفة هل هي group أم supergroup أم private
 
-      // التأكد من أن الرسالة قادمة من جروب الإدارة المعتمد وليس من مكان آخر
-      console.log('Received message in admin bot:', text, 'from chat ID:', chatId);
-      if (chatId === this.adminGroupChatId) {
-        console.log('Received message in admin group:', text);
+      // 🚨 هذا السطر حاسم: سيطبع لك في الـ Logs الـ ID الدقيق للجروب الذي أرسلت فيه
+      console.log(`[LOG] نوع المحادثة: ${chatType} | الـ ID المستلم: ${chatId} | النص: ${text}`);
+      console.log(`[LOG] الـ ID المخزن في الـ .env الحالي هو: ${this.adminGroupChatId}`);
+
+      // التحقق المرن: يقبل المطابقة المباشرة أو إذا كان أحدهما يحتوي على الآخر (بسبب الـ -100)
+      const isAuthorizedGroup = 
+        chatId === this.adminGroupChatId || 
+        chatId.replace('-100', '') === this.adminGroupChatId.replace('-100', '');
+
+      if (isAuthorizedGroup) {
+        console.log('✅ تم التحقق بنجاح: الرسالة قادمة من جروب الإدارة المعتمد.');
+        
         // إذا بدأت الرسالة بكلمة "تغذية" أو "خبر:" نقوم بحفظها في الـ RAG
         if (text.startsWith('تغذية:') || text.startsWith('خبر:')) {
           const cleanContent = text.replace(/^(تغذية:|خبر:)\s*/, '');
@@ -73,26 +88,24 @@ export class TelegramService implements OnModuleInit {
             await this.ragService.saveKnowledge(cleanContent);
             await ctx.reply('✅ تم حفظ المعلومة بنجاح في قاعدة بيانات ضاحية الفردوس والمزامنة مع الـ RAG!');
           } catch (error) {
+            console.error('Error saving knowledge:', error);
             await ctx.reply('❌ حدث خطأ أثناء حفظ المعلومة، يرجى التحقق من السيرفر.');
           }
           return;
         }
 
-        // آلية الرد اليدوي: إذا قام الأدمن بعمل Reply على استفسار محول من البوت الرئيسي
+        // آلية الرد اليدوي (Reply)
         if (ctx.message.reply_to_message) {
           const replyToId = ctx.message.reply_to_message.message_id.toString();
 
-          // البحث عن التذكرة المعلقة المرتبطة بهذه الرسالة في قاعدة البيانات
           const ticket = await this.prisma.ticket.findFirst({
             where: { adminMsgId: replyToId, status: 'PENDING_MANUAL' },
           });
 
           if (ticket) {
             try {
-              // إرسال رد الأدمن مباشرة للمستخدم الأصلي عبر البوت الرئيسي!
               await this.mainBot.telegram.sendMessage(ticket.chatId, `✍️ **رد من إدارة فريق الفردوس الإعلامي:**\n\n${text}`, { parse_mode: 'HTML' });
               
-              // تحديث حالة التذكرة إلى تم الرد يدوياً
               await this.prisma.ticket.update({
                 where: { id: ticket.id },
                 data: { status: 'ANSWERED_MANUAL' },
@@ -104,6 +117,8 @@ export class TelegramService implements OnModuleInit {
             }
           }
         }
+      } else {
+        console.log('⚠️ تم رفض الرسالة لأن الـ Chat ID غير مطابق للـ ID المعتمد في الـ .env');
       }
     });
   }
