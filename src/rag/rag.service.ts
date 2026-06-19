@@ -130,7 +130,7 @@ export class RagService implements OnModuleInit {
     const embeddingString = `[${questionEmbedding.join(',')}]`;
     
     // 🎯 هنا نضع حد قرب صارم جداً (مثلاً أقل من 0.35) لأننا نريد التقاط التحيات والأسئلة المتطابقة في المعنى فقط
-    const threshold = 0.35; 
+    const threshold = 0.1; 
 
     const matches: any[] = await this.prisma.$queryRawUnsafe(`
       SELECT reply, (embedding <=> $1::vector) as distance 
