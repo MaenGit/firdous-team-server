@@ -169,66 +169,69 @@ export class TelegramService implements OnModuleInit {
       );
     });
 
-    // معالجة استفسارات الأهالي وربطها بالـ RAG والـ AI
+    // معالجة استفسارات الأهالي وربطها بالـ RAG والـ AI والردود الثابتة
     this.mainBot.on('text', async (ctx) => {
       console.log("text comes to main bot");
-      const question = ctx.message.text;
+      const question = ctx.message.text.trim();
       const chatId = ctx.chat.id.toString();
       const username = ctx.from.username || ctx.from.first_name;
 
-      const quickMatch = await this.prisma.quickResponse.findFirst({
-        where: {
-          OR: [
-            { keyword: { equals: question } }, // تطابق تام
-            { keyword: { contains: question } } // الكلمة جزء من الجملة
-          ]
-        }
-      });
+      try {
+        // 🔍 1. خطوة الفحص السريع عن الردود الثابتة والمكررة
+        // تأكد من مسمى جدول الردود الثابتة لديك سواء كان quickResponse أو quick_responses بحسب ما ظهر معك
+        const quickMatch = await this.prisma.quickResponse.findFirst({
+          where: {
+            OR: [
+              { keyword: { equals: question } },   // تطابق تام
+              { keyword: { contains: question } }  // الكلمة جزء من الجملة
+            ]
+          }
+        });
 
-      if (quickMatch) {
-        await ctx.reply(quickMatch.reply);
-        
-        // تسجيل التذكرة كـ "مستجاب تلقائياً" للحفظ في السجلات
-        await this.prisma.ticket.create({
+        // 🚀 إذا وجد رد ثابت، يرسله فوراً وينتهي الطلب هنا تماماً!
+        if (quickMatch) {
+          await ctx.reply(quickMatch.reply);
+          
+          // تسجيل التذكرة مستجابة تلقائياً للحفظ في السجلات
+          await this.prisma.ticket.create({
+            data: {
+              chatId,
+              username,
+              question,
+              status: 'ANSWERED_BY_BOT',
+            },
+          });
+          return;
+        }
+
+        // ⏳ 2. إذا لم يجد رداً ثابتاً، يكمل العمل الطبيعي للـ RAG والـ AI
+        const waitingMsg = await ctx.reply('⏳ جاري البحث والتحقق من الاستفسار، لحظات من فضلك...');
+
+        // تسجيل التذكرة في قاعدة البيانات لبدء المعالجة
+        const ticket = await this.prisma.ticket.create({
           data: {
             chatId,
             username,
             question,
-            status: 'ANSWERED_BY_BOT', // أو الاسم المتوافق لديك في الـ Enum
+            status: 'PENDING_BOT',
           },
         });
-        return;
-      }
 
-      // 1. إشارة للمستخدم ببدء المعالجة
-      const waitingMsg = await ctx.reply('⏳ جاري البحث والتحقق من الاستفسار، لحظات من فضلك...');
-
-      // 2. تسجيل التذكرة في قاعدة البيانات
-      const ticket = await this.prisma.ticket.create({
-        data: {
-          chatId,
-          username,
-          question,
-          status: 'PENDING_BOT',
-        },
-      });
-
-      try {
         // 3. استدعاء نظام الـ RAG للبحث عن معلومات متعلقة بالسؤال
         const contextDocs = await this.ragService.searchKnowledge(question);
 
-        // 4. إذا لم يجد معلومات كافية في الـ RAG (المصفوفة فارغة) تحول للأدمن يدوياً
-        if (contextDocs.length === 0) {
+        // 4. إذا لم يجد معلومات كافية في الـ RAG (المصفوفة فارغة) تحول للأدمن يدوياً في الجروب فوراً
+        if (!contextDocs || contextDocs.length === 0) {
           await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.');
           
-          // إرسال تنبيه لجروب الإدارة عبر بوت الإدارة
+          // إرسال تنبيه لجروب الإدارة عبر بوت الإدارة لكي تقوموا بالرد عليه
           const adminAlert = await this.adminBot.telegram.sendMessage(
             this.adminGroupChatId,
             `🚨 **إشعار استفسار جديد يحتاج رد يدوياً!**\n\n**المستفسر:** @${username}\n**الاستفسار:** ${question}\n\n👉 *قم بعمل Reply على هذه الرسالة للرد عليه مباشرة.*`,
             { parse_mode: 'HTML' }
           );
 
-          // تحديث حالة التذكرة لانتظار الرد اليدوي
+          // تحديث حالة التذكرة لانتظار الرد اليدوي بربطها بالـ Message ID في جروب الإدارة
           await this.prisma.ticket.update({
             where: { id: ticket.id },
             data: { status: 'PENDING_MANUAL', adminMsgId: adminAlert.message_id.toString() },
@@ -236,15 +239,13 @@ export class TelegramService implements OnModuleInit {
           return;
         }
 
-        // 5. إذا وُجدت معلومات: نقوم بدمج السياق وإرساله للـ LLM لتوليد الإجابة
-        const contextText = contextDocs.join('\n\n');
-        
-        // استدعاء دالة توليد الإجابة من الـ LlmService (تأكد من اسم الدالة لديك، غالباً generateAnswer أو generateResponse)
+        // 5. إذا وُجدت معلومات في قاعدة البيانات: نمرر المصفوفة للـ LLM (Gemini) ليصيغ الرد
         const aiResponse = await this.llmService.generateResponse(question, contextDocs);
 
-        // 6. تحديث رسالة الانتظار بالإجابة الذكية النهائية التي صاغها Gemini للمستخدم
+        // 6. تحديث رسالة الانتظار بالإجابة الذكية النهائية للمستخدم
         await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, aiResponse);
-        // 7. تحديث حالة التذكرة في قاعدة البيانات إلى "تم الرد بواسطة البوت"
+
+        // 7. تحديث حالة التذكرة في قاعدة البيانات إلى "تم الرد"
         await this.prisma.ticket.update({
           where: { id: ticket.id },
           data: { status: 'ANSWERED_BY_BOT' },
@@ -252,8 +253,12 @@ export class TelegramService implements OnModuleInit {
 
       } catch (error) {
         console.error('Error processing main bot query:', error);
-        // في حال حدوث أي خطأ غير متوقع أثناء توليد الـ AI
-        await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⚠️ عذراً، واجهنا مشكلة فنية أثناء معالجة الطلب. يرجى المحاولة مرة أخرى لاحقاً.');
+        try {
+          // في حال حدوث أي خطأ، نبلغ المستخدم لكي لا يظل معلقاً
+          await ctx.reply('⚠️ عذراً، واجهنا مشكلة فنية أثناء معالجة الطلب. يرجى المحاولة مرة أخرى لاحقاً.');
+        } catch (ctxErr) {
+          console.error('Could not send error message to user:', ctxErr);
+        }
       }
     });
   }
