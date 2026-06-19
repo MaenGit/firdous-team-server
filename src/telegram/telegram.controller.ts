@@ -24,6 +24,8 @@ export class TelegramController {
   @Post('admin')
   async handleAdminBot(@Req() req: any, @Res() res: any) {
     try {
+      console.log('📬 [RAW WEBHOOK] بيانات خام قادمة لبوت الإدارة:', JSON.stringify(req.body));
+
       await this.telegramService.adminBot.handleUpdate(req.body, res);
       if (!res.headersSent) {
         res.sendStatus(200);
