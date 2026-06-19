@@ -42,7 +42,7 @@ export class RagService implements OnModuleInit {
   async generateEmbedding(text: string): Promise<number[]> {
     try {
       const response = await this.ai.models.embedContent({
-        model: 'text-embedding-004', 
+        model: 'text-embedding-005', 
         contents: text,
       });
 
