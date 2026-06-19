@@ -113,12 +113,8 @@ export class TelegramService implements OnModuleInit {
           const replyText = parts[1].trim();
 
           try {
-            await this.prisma.quickResponse.upsert({
-              where: { keyword: keyword },
-              update: { reply: replyText },
-              create: { keyword: keyword, reply: replyText },
-            });
-            await ctx.reply(`✅ تم حفظ الرد الثابت بنجاح!\n\n🔑 **الكلمة:** ${keyword}\n💬 **الرد:** ${replyText}`);
+            await this.ragService.saveQuickResponse(keyword, replyText);
+            await ctx.reply(`✅ تم حفظ الرد الثابت بنجاح وتوليد الـ Vector الخاص به!`);
           } catch (error) {
             console.error('Error saving quick response:', error);
             await ctx.reply('❌ حدث خطأ أثناء حفظ الرد الثابت بقاعدة البيانات.');
@@ -179,29 +175,17 @@ export class TelegramService implements OnModuleInit {
       try {
         // 🔍 1. خطوة الفحص السريع عن الردود الثابتة والمكررة
         // تأكد من مسمى جدول الردود الثابتة لديك سواء كان quickResponse أو quick_responses بحسب ما ظهر معك
-        const quickMatch = await this.prisma.quickResponse.findFirst({
-          where: {
-            OR: [
-              { keyword: { equals: question } },   // تطابق تام
-              { keyword: { contains: question } }  // الكلمة جزء من الجملة
-            ]
-          }
-        });
+        const quickMatch = await this.ragService.searchQuickResponse(question);
 
         // 🚀 إذا وجد رد ثابت، يرسله فوراً وينتهي الطلب هنا تماماً!
         if (quickMatch) {
+          console.log(`🎯 [RAG QUICK MATCH] تم العثور على رد دلالي ثابت ومطابق.`);
           await ctx.reply(quickMatch.reply);
           
-          // تسجيل التذكرة مستجابة تلقائياً للحفظ في السجلات
           await this.prisma.ticket.create({
-            data: {
-              chatId,
-              username,
-              question,
-              status: 'ANSWERED_BY_BOT',
-            },
+            data: { chatId, username, question, status: 'ANSWERED_BY_BOT' },
           });
-          return;
+          return; // إنهاء ودفرة المحادثة بنجاح وتوفير الـ AI
         }
 
         // ⏳ 2. إذا لم يجد رداً ثابتاً، يكمل العمل الطبيعي للـ RAG والـ AI

@@ -109,4 +109,37 @@ export class RagService implements OnModuleInit {
 
     return [];
   }
+
+  async saveQuickResponse(keyword: string, reply: string): Promise<void> {
+    // توليد الـ Embedding للكلمة المفتاحية (باستخدام نفس دالة التضمين المعتمدة لمشروعك)
+    const embedding = await this.generateEmbedding(keyword); 
+    const embeddingString = `[${embedding.join(',')}]`;
+
+    // استخدام SQL خام لحفظ الـ Vector بشكل صحيح في Neon
+    await this.prisma.$executeRawUnsafe(`
+      INSERT INTO "quick_responses" (id, keyword, reply, embedding, "createdAt")
+      VALUES (gen_random_uuid(), $1, $2, $3::vector, NOW())
+      ON CONFLICT (keyword) 
+      DO UPDATE SET reply = $2, embedding = $3::vector;
+    `, keyword, reply, embeddingString);
+  }
+
+  // 2️⃣ دالة البحث عن أقرب رد ثابت بحد قرب صارم جداً (Threshold) لضمان عدم الخلط
+  async searchQuickResponse(question: string): Promise<{ reply: string } | null> {
+    const questionEmbedding = await this.generateEmbedding(question);
+    const embeddingString = `[${questionEmbedding.join(',')}]`;
+    
+    // 🎯 هنا نضع حد قرب صارم جداً (مثلاً أقل من 0.35) لأننا نريد التقاط التحيات والأسئلة المتطابقة في المعنى فقط
+    const threshold = 0.35; 
+
+    const matches: any[] = await this.prisma.$queryRawUnsafe(`
+      SELECT reply, (embedding <=> $1::vector) as distance 
+      FROM "quick_responses"
+      WHERE (embedding <=> $1::vector) < $2
+      ORDER BY distance ASC 
+      LIMIT 1;
+    `, embeddingString, threshold);
+
+    return matches.length > 0 ? { reply: matches[0].reply } : null;
+  }
 }
