@@ -61,6 +61,7 @@ export class TelegramService implements OnModuleInit {
       const text = ctx.message.text;
 
       // التأكد من أن الرسالة قادمة من جروب الإدارة المعتمد وليس من مكان آخر
+      console.log('Received message in admin bot:', text, 'from chat ID:', chatId);
       if (chatId === this.adminGroupChatId) {
         console.log('Received message in admin group:', text);
         // إذا بدأت الرسالة بكلمة "تغذية" أو "خبر:" نقوم بحفظها في الـ RAG
