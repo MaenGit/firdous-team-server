@@ -219,29 +219,34 @@ export class TelegramService implements OnModuleInit {
 
         // 3. استدعاء نظام الـ RAG للبحث عن معلومات متعلقة بالسؤال
         const contextDocs = await this.ragService.searchKnowledge(question);
+        console.log('🔍 [RAG RESULT] المخرجات الخام القادمة من الـ RAG هي:', JSON.stringify(contextDocs));
 
-        // 4. إذا لم يجد معلومات كافية في الـ RAG (المصفوفة فارغة) تحول للأدمن يدوياً في الجروب فوراً
+        // 🔥 فلترة إضافية: التأكد من أن النصوص المسترجعة ليست فارغة وتحتوي على حد أدنى من الكلمات المشتركة مع السؤال لمنع الهبد
+        const validContextDocs = contextDocs.filter(doc => {
+          if (!doc || doc.trim() === "") return false;
+          
+          // تفكيك الكلمات الأساسية في السؤال (تخطي حروف الجر القصيرة)
+          const questionWords = question.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+          
+          // حساب كم كلمة من السؤال موجودة في الخبر المسترجع
+          const matchCount = questionWords.filter(word => doc.toLowerCase().includes(word)).length;
+          
+          // شرط القرب النصي البديل: يجب أن يشترك الخبر مع السؤال في كلمة دلالية واحدة على الأقل
+          return matchCount > 0;
+        });
 
-        // 🚨 طباعة النتيجة في الـ Logs لترى بعينك ماذا يرجع الـ RAG!
-        console.log('🔍 [RAG RESULT] المخرجات القادمة من الـ RAG هي:', JSON.stringify(contextDocs));
+        // فحص صارم ومحدث: هل السياق بعد الفلترة وتطبيق شرط القرب أصبح فارغاً؟
+        const isContextEmpty = validContextDocs.length === 0;
 
-        // فحص صارم وذكي: هل المخرجات فارغة، أو غير موجودة، أو تحتوي على نصوص فارغة؟
-        const isContextEmpty = 
-          !contextDocs || 
-          !Array.isArray(contextDocs) || 
-          contextDocs.length === 0 ||
-          contextDocs.every(doc => !doc || doc.trim() === "" || doc.includes("لا توجد معلومات"));
-
-        // 4. إذا تحققنا أن السياق فارغ أو غير مفيد -> نذهب فوراً للمجموعة (التحويل اليدوي)
+        // 4. إذا كان السياق فارغاً أو غير مرتبط وفقاً لشرط القرب -> تحويل فوري لجروب الإدارة
         if (isContextEmpty) {
-          console.log('🚨 [LOG] السياق فارغ! جاري تحويل السؤال يدوياً إلى جروب الإدارة فورا...');
+          console.log('🚨 [LOG] لم يجتز أي خبر شرط القرب! جاري تحويل السؤال يدوياً إلى جروب الإدارة...');
 
-          // إرسال التنبيه لجروب الإدارة أولاً
           const adminAlert = await this.adminBot.telegram.sendMessage(
             this.adminGroupChatId,
             `🚨 استفسار جديد يحتاج رد يدوي:\n👤 المستخدم: @${username}\n💬 السؤال: ${question}\n\n👉 قم بعمل Reply للرد عليه.`
           ).catch(err => {
-            console.error('❌ فشل الإرسال للمجموعة، تأكد من التوكن والـ ID والرتبة:', err.message);
+            console.error('❌ فشل الإرسال للمجموعة:', err.message);
             return null;
           });
 
@@ -252,9 +257,8 @@ export class TelegramService implements OnModuleInit {
             });
           }
 
-          await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.').catch(e => console.log('فشل تعديل رسالة المستخدم'));
-          
-          return; // إنهاء دالة المعالجة وعدم الذهاب للـ AI
+          await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.').catch(e => {});
+          return;
         }
 
         // 5. إذا وُجدت معلومات في قاعدة البيانات: نمرر المصفوفة للـ LLM (Gemini) ليصيغ الرد
