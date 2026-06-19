@@ -56,6 +56,7 @@ export class TelegramService implements OnModuleInit {
   private registerAdminBotHandlers() {
     // عندما يقوم أحد المشرفين بإرسال خبر في جروب الإدارة المغلق
     this.adminBot.on('text', async (ctx) => {
+      console.log("text comes to admin bot");
       const chatId = ctx.chat.id.toString();
       const text = ctx.message.text;
 
@@ -118,6 +119,7 @@ export class TelegramService implements OnModuleInit {
 
     // معالجة استفسارات الأهالي سنقوم بربطها بالـ RAG والـ AI في المرحلة القادمة
     this.mainBot.on('text', async (ctx) => {
+      console.log("text comes to main bot");
       const question = ctx.message.text;
       const chatId = ctx.chat.id.toString();
       const username = ctx.from.username || ctx.from.first_name;
