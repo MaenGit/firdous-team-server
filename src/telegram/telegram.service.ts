@@ -248,7 +248,7 @@ export class TelegramService implements OnModuleInit {
         // 5. إذا وُجدت معلومات في قاعدة البيانات: نمرر المصفوفة للـ LLM (Gemini) ليصيغ الرد
         const aiResponse = await this.llmService.generateResponse(question, contextDocs);
 
-        if (aiResponse == "I DONT KNOW"){
+        if (aiResponse.includes("I DONT KNOW")){
           console.log('🚨 [LOG] لم يجتز أي خبر شرط القرب! جاري تحويل السؤال يدوياً إلى جروب الإدارة...');
 
           const adminAlert = await this.adminBot.telegram.sendMessage(
