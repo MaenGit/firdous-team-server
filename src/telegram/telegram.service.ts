@@ -4,6 +4,7 @@ import { Telegraf } from 'telegraf';
 import { RagService } from '../rag/rag.service';
 import { PrismaService } from '../prisma.service';
 import axios from 'axios';
+import { LlmService } from 'src/llm/llm.service';
 
 @Injectable()
 export class TelegramService implements OnModuleInit {
@@ -16,8 +17,9 @@ export class TelegramService implements OnModuleInit {
 
   constructor(
     private configService: ConfigService,
-    private ragService: RagService,
-    private prisma: PrismaService,
+  private ragService: RagService,
+  private prisma: PrismaService,
+  private llmService: LlmService,
   ) {
     const mainToken = this.configService.get<string>('TELEGRAM_MAIN_BOT_TOKEN');
     const adminToken = this.configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN');
@@ -130,6 +132,9 @@ export class TelegramService implements OnModuleInit {
   /**
    * 🤖 2. البوت الرئيسي للمستفسرين (Main Bot)
    */
+  /**
+   * 🤖 2. البوت الرئيسي للمستفسرين (Main Bot)
+   */
   private registerMainBotHandlers() {
     // ترحيب بالمستخدم عند الضغط على /start
     this.mainBot.start(async (ctx) => {
@@ -138,14 +143,14 @@ export class TelegramService implements OnModuleInit {
       );
     });
 
-    // معالجة استفسارات الأهالي سنقوم بربطها بالـ RAG والـ AI في المرحلة القادمة
+    // معالجة استفسارات الأهالي وربطها بالـ RAG والـ AI
     this.mainBot.on('text', async (ctx) => {
       console.log("text comes to main bot");
       const question = ctx.message.text;
       const chatId = ctx.chat.id.toString();
       const username = ctx.from.username || ctx.from.first_name;
 
-      // 1. أرسل إشارة للمستخدم أن البوت مستيقظ ويعمل لكي لا يشعر بالبطء (Cold Start لـ Render)
+      // 1. إشارة للمستخدم ببدء المعالجة
       const waitingMsg = await ctx.reply('⏳ جاري البحث والتحقق من الاستفسار، لحظات من فضلك...');
 
       // 2. تسجيل التذكرة في قاعدة البيانات
@@ -158,31 +163,47 @@ export class TelegramService implements OnModuleInit {
         },
       });
 
-      // 3. استدعاء نظام الـ RAG للبحث عن معلومات متعلقة بالسؤال
-      const contextDocs = await this.ragService.searchKnowledge(question);
+      try {
+        // 3. استدعاء نظام الـ RAG للبحث عن معلومات متعلقة بالسؤال
+        const contextDocs = await this.ragService.searchKnowledge(question);
 
-      // [ملاحظة تذكيرية]: هنا في الخطوة القادمة سنقوم بإرسال الـ contextDocs إلى دالة الـ AI 
-      // لتوليد الإجابة أو تحويلها للأدمن يدوياً إذا كانت المصفوفة فارغة.
-      
-      // مؤقتاً للتجربة: إذا لم يجد معلومات
-      if (contextDocs.length === 0) {
-        await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا توجد معلومات فورية حالياً، سيتم رفع استفسارك للمسؤولين والرد عليك فوراً.');
+        // 4. إذا لم يجد معلومات كافية في الـ RAG (المصفوفة فارغة) تحول للأدمن يدوياً
+        if (contextDocs.length === 0) {
+          await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⏱️ لا تتوفر تفاصيل فورية حالياً بخصوص هذا الاستفسار، تم تحويل سؤالك للمسؤولين وسيتم الرد عليك هنا فور صدور التوضيح.');
+          
+          // إرسال تنبيه لجروب الإدارة عبر بوت الإدارة
+          const adminAlert = await this.adminBot.telegram.sendMessage(
+            this.adminGroupChatId,
+            `🚨 **إشعار استفسار جديد يحتاج رد يدوياً!**\n\n**المستفسر:** @${username}\n**الاستفسار:** ${question}\n\n👉 *قم بعمل Reply على هذه الرسالة للرد عليه مباشرة.*`,
+            { parse_mode: 'HTML' }
+          );
+
+          // تحديث حالة التذكرة لانتظار الرد اليدوي
+          await this.prisma.ticket.update({
+            where: { id: ticket.id },
+            data: { status: 'PENDING_MANUAL', adminMsgId: adminAlert.message_id.toString() },
+          });
+          return;
+        }
+
+        // 5. إذا وُجدت معلومات: نقوم بدمج السياق وإرساله للـ LLM لتوليد الإجابة
+        const contextText = contextDocs.join('\n\n');
         
-        // إرسال تنبيه لجروب الإدارة عبر بوت الإدارة
-        const adminAlert = await this.adminBot.telegram.sendMessage(
-          this.adminGroupChatId,
-          `🚨 **إشعار استفسار جديد يحتاج رد يدوياً!**\n\n**المستفسر:** @${username}\n**الاستفسار:** ${question}\n\n👉 *قم بعمل Reply على هذه الرسالة للرد عليه مباشرة.*`,
-          { parse_mode: 'HTML' }
-        );
+        // استدعاء دالة توليد الإجابة من الـ LlmService (تأكد من اسم الدالة لديك، غالباً generateAnswer أو generateResponse)
+        const aiResponse = await this.llmService.generateResponse(question, contextDocs);
 
-        // حفظ معرف الرسالة لربط الـ Reply لاحقاً
+        // 6. تحديث رسالة الانتظار بالإجابة الذكية النهائية التي صاغها Gemini للمستخدم
+        await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, aiResponse);
+        // 7. تحديث حالة التذكرة في قاعدة البيانات إلى "تم الرد بواسطة البوت"
         await this.prisma.ticket.update({
           where: { id: ticket.id },
-          data: { status: 'PENDING_MANUAL', adminMsgId: adminAlert.message_id.toString() },
+          data: { status: 'ANSWERED_BY_BOT' },
         });
-      } else {
-        // إذا وجد معلومات (سنمررها للـ AI في الخطوة التالية، حالياً سنطبعها للتأكد من عمل الـ RAG)
-        await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, `💡 **المعلومات المسترجعة من الـ RAG (تمهيداً لإرسالها للـ AI):**\n\n${contextDocs.join('\n')}`);
+
+      } catch (error) {
+        console.error('Error processing main bot query:', error);
+        // في حال حدوث أي خطأ غير متوقع أثناء توليد الـ AI
+        await this.mainBot.telegram.editMessageText(chatId, waitingMsg.message_id, undefined, '⚠️ عذراً، واجهنا مشكلة فنية أثناء معالجة الطلب. يرجى المحاولة مرة أخرى لاحقاً.');
       }
     });
   }
