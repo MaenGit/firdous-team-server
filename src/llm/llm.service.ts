@@ -23,6 +23,25 @@ export class LlmService {
    * توليد الإجابة الذكية مع ميزة التحويل التلقائي عند الفشل (Failover)
    */
   async generateResponse(question: string, contextDocs: string[]): Promise<string> {
+    // Optional: enrich context with GROQ results if endpoint configured
+    try {
+      const groqEndpoint = this.configService.get<string>('GROQ_ENDPOINT');
+      if (groqEndpoint) {
+        const groqResp = await axios.post(groqEndpoint, { query: question });
+        const groqData = groqResp.data?.result || groqResp.data;
+        if (groqData) {
+          if (Array.isArray(groqData)) {
+            contextDocs = contextDocs.concat(groqData.map(d => JSON.stringify(d)));
+          } else if (typeof groqData === 'string') {
+            contextDocs.push(groqData);
+          } else {
+            contextDocs.push(JSON.stringify(groqData));
+          }
+        }
+      }
+    } catch (groqErr) {
+      console.error('GROQ enrichment failed:', groqErr?.message || groqErr);
+    }
     const contextText = contextDocs.length > 0 
       ? contextDocs.map((doc, i) => `[معلومة ${i + 1}]: ${doc}`).join('\n')
       : 'لا توجد معلومات مباشرة ومحدثة في قاعدة البيانات حالياً.';

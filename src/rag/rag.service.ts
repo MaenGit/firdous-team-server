@@ -27,7 +27,23 @@ export class RagService implements OnModuleInit {
   }
 
   async onModuleInit() {
-    await this.prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS vector;`);
+    // Ensure the pgvector extension exists — retry a few times on transient errors
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await this.prisma.$executeRawUnsafe(`CREATE EXTENSION IF NOT EXISTS vector;`);
+        console.log('✅ pgvector extension ensured');
+        break;
+      } catch (err) {
+        console.error(`Attempt ${attempt} to create pgvector extension failed:`, err?.message || err);
+        if (attempt === maxAttempts) {
+          console.error('Giving up creating pgvector extension after multiple attempts — continuing without it.');
+        } else {
+          // wait a bit before retrying (exponential backoff)
+          await new Promise(res => setTimeout(res, attempt * 2000));
+        }
+      }
+    }
   }
 
   /**
@@ -141,5 +157,56 @@ export class RagService implements OnModuleInit {
     `, embeddingString, threshold);
 
     return matches.length > 0 ? { reply: matches[0].reply } : null;
+  }
+
+  /**
+   * Search for services by name (case-insensitive, partial match)
+   */
+  async searchServices(serviceName: string): Promise<any[]> {
+    try {
+      const results = await this.prisma.serviceProvider.findMany({
+        where: {
+          service: {
+            contains: serviceName,
+            mode: 'insensitive',
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+      });
+
+      return results;
+    } catch (error) {
+      console.error('Error searching services:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Save a new service provider record
+   */
+  async saveServiceProvider(data: { service: string; provider: string; phoneNumber?: string; notes?: string }) {
+    try {
+      // generate embedding for the service entry
+      const text = `${data.service} ${data.provider} ${data.notes || ''}`;
+      const embedding = await this.generateEmbedding(text);
+      const embeddingString = `[${embedding.join(',')}]`;
+
+      const results: any = await this.prisma.$queryRawUnsafe(
+        `INSERT INTO "service_providers" (id, service, provider, "phoneNumber", notes, embedding, "createdAt", "updatedAt")
+         VALUES (gen_random_uuid(), $1, $2, $3, $4, $5::vector, NOW(), NOW())
+         RETURNING id, service, provider, "phoneNumber", notes, "createdAt", "updatedAt";`,
+        data.service,
+        data.provider,
+        data.phoneNumber || '',
+        data.notes || null,
+        embeddingString,
+      );
+
+      return results && results[0] ? results[0] : null;
+    } catch (error) {
+      console.error('Error saving service provider:', error);
+      throw error;
+    }
   }
 }
