@@ -274,7 +274,9 @@ export class TelegramService implements OnModuleInit {
       await this.prisma.ticket.update({ where: { id: ticket.id }, data: { status: 'ANSWERED_BY_BOT' } });
     } catch (error) {
       console.error('Error processing main bot query:', error);
-      try { await ctx.reply('⚠️ عذراً، واجهنا مشكلة فنية أثناء معالجة الطلب. يرجى المحاولة مرة أخرى لاحقاً.'); } catch (e) { console.error(e); }
+      try { await ctx.reply('⚠️ عذراً، واجهنا مشكلة فنية أثناء معالجة الطلب. يرجى المحاولة مرة أخرى لاحقاً.');
+        console.log("ehhm: "+error);
+       } catch (e) { console.error(e); }
     }
   }
 }
