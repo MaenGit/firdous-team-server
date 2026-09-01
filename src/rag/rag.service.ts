@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma.service';
 // ✅ NEW IMPORT: Import the modern client class
 import { GoogleGenAI } from '@google/genai'; 
+import { pipeline } from '@xenova/transformers';
 
 @Injectable()
 export class RagService implements OnModuleInit {
@@ -55,39 +56,114 @@ export class RagService implements OnModuleInit {
   /**
    * Generates embedding using the unified @google/genai SDK
    */
-  async generateEmbedding(text: string): Promise<number[]> {
-    console.log('Generating embedding for text:', text);
+
+  
+
+  // Local extractor / fallback embedding model (cached on the instance)
+  private extractor: any = null;
+
+  private async getExtractor() {
+    if (!this.extractor) {
+      // This loads the model. It downloads once and caches it locally.
+      this.extractor = await pipeline('feature-extraction', 'Xenova/bge-base-en-v1.5');
+    }
+    return this.extractor;
+  }
+
+  private async localGenerateEmbedding(text: string): Promise<number[]> {
+    console.log('Generating local embedding for text:', text);
+    try {
+      const extract = await this.getExtractor();
+
+      // Generate the embedding (pooling: 'mean' and normalize are standard for BGE)
+      const output = await extract(text, { pooling: 'mean', normalize: true });
+
+      // Convert the tensor output into a standard JavaScript array
+      const embedding = Array.from(output.data) as number[];
+
+      // BGE-base outputs exactly 768 dimensions
+      return embedding;
+    } catch (error) {
+      console.error('Error generating local embedding:', error);
+      throw error;
+    } finally {
+      console.log('Local embedding generation attempt completed.');
+    }
+  }
+
+  // Try Google GenAI first, fall back to local embedding via Xenova
+  private async generateEmbedding(text: string): Promise<number[]> {
+    // Attempt Google GenAI embeddings
     try {
       const response = await this.ai.models.embedContent({
         model: 'gemini-embedding-2',
         contents: text,
-        // This forces the model to return exactly 768 dimensions
-        config: {
-            outputDimensionality: 768
-        }
-    });
+        config: { outputDimensionality: 768 },
+      });
 
-      // تحويل الرد إلى any لتفادي اعتراضات الـ TypeScript والوصول للمصفوفة مباشرة
-      const res = response as any;
-
-      // الحالة الأولى: الرد يحتوي على مصفوفة embeddings (وهو التصميم الأساسي للـ SDK الموحد)
+      const res: any = response;
       if (res.embeddings && res.embeddings.length > 0 && res.embeddings[0].values) {
         return res.embeddings[0].values;
       }
-
-      // الحالة الثانية: الرد يحتوي على كائن embedding مفرد
       if (res.embedding && res.embedding.values) {
         return res.embedding.values;
       }
-      
-      throw new Error('No embedding values found in the response layout');
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      throw error;
-    }finally{
-      console.log('Embedding generation attempt completed.');
+
+      throw new Error('No embedding values found in Google GenAI response');
+    } catch (err: any) {
+      const isPermissionDenied = err && (err.status === 403 || (err?.message && err.message.includes('PERMISSION_DENIED')) || (err?.message && err.message.includes('denied')));
+      if (isPermissionDenied) {
+        console.warn('Google GenAI permission denied — falling back to local embedding (Xenova).');
+      } else {
+        console.error('Google GenAI embedding failed, falling back to local model:', err?.message || err);
+      }
+
+      // Fallback to local embedding
+      try {
+        const local = await this.localGenerateEmbedding(text);
+        return local;
+      } catch (localErr) {
+        console.error('Local embedding also failed:', localErr);
+        // rethrow original Google error if present, otherwise local error
+        throw err || localErr;
+      }
     }
   }
+
+
+  // async generateEmbedding(text: string): Promise<number[]> {
+  //   console.log('Generating embedding for text:', text);
+  //   try {
+  //     const response = await this.ai.models.embedContent({
+  //       model: 'gemini-embedding-2',
+  //       contents: text,
+  //       // This forces the model to return exactly 768 dimensions
+  //       config: {
+  //           outputDimensionality: 768
+  //       }
+  //   });
+
+  //     // تحويل الرد إلى any لتفادي اعتراضات الـ TypeScript والوصول للمصفوفة مباشرة
+  //     const res = response as any;
+
+  //     // الحالة الأولى: الرد يحتوي على مصفوفة embeddings (وهو التصميم الأساسي للـ SDK الموحد)
+  //     if (res.embeddings && res.embeddings.length > 0 && res.embeddings[0].values) {
+  //       return res.embeddings[0].values;
+  //     }
+
+  //     // الحالة الثانية: الرد يحتوي على كائن embedding مفرد
+  //     if (res.embedding && res.embedding.values) {
+  //       return res.embedding.values;
+  //     }
+      
+  //     throw new Error('No embedding values found in the response layout');
+  //   } catch (error) {
+  //     console.error('Error generating embedding:', error);
+  //     throw error;
+  //   }finally{
+  //     console.log('Embedding generation attempt completed.');
+  //   }
+  // }
 
   /**
    * Save knowledge with fixed position placeholder parameters
