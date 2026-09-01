@@ -56,6 +56,7 @@ export class RagService implements OnModuleInit {
    * Generates embedding using the unified @google/genai SDK
    */
   async generateEmbedding(text: string): Promise<number[]> {
+    console.log('Generating embedding for text:', text);
     try {
       const response = await this.ai.models.embedContent({
         model: 'gemini-embedding-2',
@@ -83,6 +84,8 @@ export class RagService implements OnModuleInit {
     } catch (error) {
       console.error('Error generating embedding:', error);
       throw error;
+    }finally{
+      console.log('Embedding generation attempt completed.');
     }
   }
 
@@ -144,7 +147,7 @@ export class RagService implements OnModuleInit {
   async searchQuickResponse(question: string): Promise<{ reply: string } | null> {
     const questionEmbedding = await this.generateEmbedding(question);
     const embeddingString = `[${questionEmbedding.join(',')}]`;
-    
+    console.log('🔍 Embedding for question generated:', embeddingString);
     // 🎯 هنا نضع حد قرب صارم جداً (مثلاً أقل من 0.35) لأننا نريد التقاط التحيات والأسئلة المتطابقة في المعنى فقط
     const threshold = 0.1; 
 
